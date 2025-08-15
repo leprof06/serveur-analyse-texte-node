@@ -1,7 +1,7 @@
 // API Node/Express d’analyse de texte
 // - Détection de langue (franc-min)
 // - Appel LanguageTool (API publique ou self-host via LT_BASE_URL)
-// - Similarité (string-similarity) + Similarité sémantique (embeddings /similarity)
+// - Similarité (string-similarity) + Similarité sémantique (HF Inference API)
 // - Heuristiques de structure (verbes & mots-clés)
 // - CORS whitelist, logging, rate limit, healthcheck
 
@@ -22,7 +22,7 @@ import { evaluateAnswer } from "./evaluation.js";
 import { rubricAggregate } from "./rubricScoring.js";
 import { semanticSimilarity100 } from "./semantic.js";
 
-// ----- Chargement du JSON (sans import assertion) -----
+// ----- Charger le JSON rubric sans import assertion -----
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rubricPath = path.join(__dirname, "rubrics", "cefr_rubric.json");
@@ -31,7 +31,7 @@ try {
   const raw = fs.readFileSync(rubricPath, "utf8");
   rubricCfg = JSON.parse(raw);
 } catch (e) {
-  console.warn("[rubric] Impossible de charger rubrics/cefr_rubric.json, utilisation des poids par défaut.", e?.message || e);
+  console.warn("[rubric] Fallback défaut :", e?.message || e);
 }
 
 const app = express();
@@ -79,8 +79,7 @@ app.get("/health", (req, res) => {
 });
 
 // ----- Route principale -----
-// POST /analyse-text
-// body: { text: string, expectedAnswer?: string, expectedLang?: string, keywords?: string[], eval?: {...} }
+// body: { text, expectedAnswer?, expectedLang?, keywords?, eval? }
 app.post("/analyse-text", async (req, res) => {
   try {
     const { text, expectedAnswer = "", expectedLang = "", keywords = [] } = req.body || {};
@@ -89,10 +88,10 @@ app.post("/analyse-text", async (req, res) => {
     }
 
     // 1) Détection langue
-    const detectedIso3 = franc(text, { minLength: 10 }); // évite faux positifs sur textes trop courts
+    const detectedIso3 = franc(text, { minLength: 10 });
     const lang = iso3ToIso2(detectedIso3);
 
-    // 2) LanguageTool (public ou self-host)
+    // 2) LanguageTool
     let ltData = { matches: [] };
     try {
       const ltLang = expectedLang || lang || "auto";
@@ -104,16 +103,16 @@ app.post("/analyse-text", async (req, res) => {
     // 3) Similarité "lettres/mots" 0..100
     const similarity = similarityScore(text, expectedAnswer);
 
-    // 4) Similarité sémantique 0..100 via /similarity (si EMB_BASE_URL configuré)
+    // 4) Similarité sémantique 0..100 via HF (si HF_API_KEY configuré + expectedAnswer)
     let semanticScore = null;
     if (expectedAnswer) {
-      semanticScore = await semanticSimilarity100(text, expectedAnswer); // null si service non configuré
+      semanticScore = await semanticSimilarity100(text, expectedAnswer);
     }
 
     // 5) Heuristiques de structure
     const struct = structureHeuristics(text, keywords, expectedLang || lang);
 
-    // 6) Scores grammaire/orthographe (V1 linéaire)
+    // 6) Scores grammaire/orthographe
     const { grammarScore, spellingScore, grammarErr, spellingErr } = grammarSpellingScores(ltData.matches);
 
     // 7) Issues formatées
@@ -127,7 +126,7 @@ app.post("/analyse-text", async (req, res) => {
       replacements: (m.replacements || []).slice(0, 5).map(r => r.value)
     }));
 
-    // 8) Alerte si langue inattendue
+    // 8) Langue inattendue
     if (expectedLang && expectedLang !== (lang || "und")) {
       issues.unshift({
         type: "language",
@@ -142,7 +141,7 @@ app.post("/analyse-text", async (req, res) => {
       contentEval = evaluateAnswer(text, evalCfg, expectedLang || lang);
     }
 
-    // 10) Barème CECRL (facultatif). Si EMB_BASE_URL non défini, 'content' du rubric = 0.
+    // 10) Barème CECRL (content s’appuie aussi sur la similarité sémantique)
     const rubric = rubricCfg.writing_default;
     const rubricScore = await rubricAggregate({
       text,
@@ -158,7 +157,7 @@ app.post("/analyse-text", async (req, res) => {
       grammarScore,
       spellingScore,
       similarityScore: similarity, // forme (lettres/mots)
-      semanticScore,               // sens (embeddings) 0..100 ou null
+      semanticScore,               // sens (HF) 0..100 ou null
       issues,
       content: contentEval,        // évaluation configurable par question
       rubric: rubricScore,         // agrégat “style prof CECRL”
@@ -174,7 +173,6 @@ app.post("/analyse-text", async (req, res) => {
     });
   } catch (err) {
     const msg = err?.message || "Unknown error";
-    // si LanguageTool public rate-limit → transforme en 503 pour indiquer côté front de réessayer
     const is429 = /429/.test(msg);
     res.status(is429 ? 503 : 500).json({
       error: "analysis_failed",

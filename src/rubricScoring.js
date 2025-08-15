@@ -1,7 +1,7 @@
 import { grammarSpellingScores } from "./scoring.js";
 import { organizationMetrics } from "./organization.js";
 import { lexisMetrics } from "./lexis.js";
-import { semanticSimilarity100 } from "./semantic.js"; // <-- corrige l'import
+import { semanticSimilarity100 } from "./semantic.js";
 
 // Agrège selon le barème CECRL-like
 export async function rubricAggregate({ text, lang, ltMatches, expectedAnswer, rubric }) {
@@ -10,11 +10,11 @@ export async function rubricAggregate({ text, lang, ltMatches, expectedAnswer, r
   // 1) grammar/mechanics (depuis LT)
   const { grammarScore, spellingScore } = grammarSpellingScores(ltMatches);
 
-  // 2) content -> sémantique (0..100). Si EMB indispo => null => 0.
+  // 2) content -> sémantique 0..100 (null => 0 si API indispo)
   let sem = 0;
   if (expectedAnswer) {
     const s = await semanticSimilarity100(text, expectedAnswer);
-    sem = Number.isFinite(s) ? s : 0; // s ∈ [0..100] ou null
+    sem = Number.isFinite(s) ? s : 0;
   }
   const contentScore = expectedAnswer ? sem : 0;
 
