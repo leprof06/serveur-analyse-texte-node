@@ -4,20 +4,35 @@
 // - Similarité (string-similarity) + Similarité sémantique (embeddings /similarity)
 // - Heuristiques de structure (verbes & mots-clés)
 // - CORS whitelist, logging, rate limit, healthcheck
+
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import rateLimit from "express-rate-limit";
 import { franc } from "franc-min";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 import { iso3ToIso2 } from "./utils/lang.js";
 import { checkWithLanguageTool } from "./services/languagetool.js";
 import { similarityScore, grammarSpellingScores, structureHeuristics } from "./scoring.js";
 import { evaluateAnswer } from "./evaluation.js";
-import rubricCfg from "./rubrics/cefr_rubric.json" assert { type: "json" };
 import { rubricAggregate } from "./rubricScoring.js";
 import { semanticSimilarity100 } from "./semantic.js";
+
+// ----- Chargement du JSON (sans import assertion) -----
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rubricPath = path.join(__dirname, "rubrics", "cefr_rubric.json");
+let rubricCfg = { writing_default: { weights: { content: 35, organization: 15, lexis: 20, grammar: 20, mechanics: 10 } } };
+try {
+  const raw = fs.readFileSync(rubricPath, "utf8");
+  rubricCfg = JSON.parse(raw);
+} catch (e) {
+  console.warn("[rubric] Impossible de charger rubrics/cefr_rubric.json, utilisation des poids par défaut.", e?.message || e);
+}
 
 const app = express();
 
