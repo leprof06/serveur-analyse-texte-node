@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  languagetool:
+    image: silviof/docker-languagetool:latest
+    container_name: languagetool
+    restart: unless-stopped
+    ports:
+      - "8010:8010"
+    environment:
+      - Java_Xms=512m      # mémoire minimale
+      - Java_Xmx=1024m     # mémoire maximale
+      - cacheSize=2000     # pour garder plus de phrases en cache
+      - langToolLanguageModel=/ngrams  # modèle pour détection plus fine
+    volumes:
+      - ./ngrams:/ngrams   # optionnel si tu veux ajouter un modèle
