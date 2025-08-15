@@ -16,7 +16,7 @@ import { checkWithLanguageTool } from "./services/languagetool.js";
 import { similarityScore, grammarSpellingScores, structureHeuristics } from "./scoring.js";
 import { evaluateAnswer } from "./evaluation.js";
 
-import rubricCfg from "./rubrics/cefr_rubric.json" assert { type: "json" };
+import rubricCfg from "../rubrics/cefr_rubric.json" assert { type: "json" };
 import { rubricAggregate } from "./rubricScoring.js";
 
 const app = express();
