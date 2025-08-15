@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: serveur-analyse-texte-node
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: "npm install"
+    startCommand: "npm start"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: LT_BASE_URL
+        sync: false
+      - key: LT_API_KEY
+        sync: false
+      - key: GRAMMAR_PTS_PER_ERROR
+        value: 6
+      - key: SPELLING_PTS_PER_ERROR
+        value: 5
+      - key: CORS_ORIGINS
+        value: https://ton-frontend.vercel.app
+    healthCheckPath: /health

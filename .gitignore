@@ -1,0 +1,34 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Next.js
+.next/
+out/
+.cache/
+
+# Vercel
+.vercel/
+
+# Logs
+logs
+*.log
+
+# Environnement
+.env
+.env.local
+.env.*.local
+
+# Systèmes
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+dist/
+build/
