@@ -1,23 +1,30 @@
-// semantic.js — appel à un micro-service embeddings (optionnel mais recommandé)
+// src/semantic.js
+// Appelle le micro-service embeddings pour obtenir une similarité de sens (0..100).
 import axios from "axios";
 
 /**
- * POST vers ton service embeddings { sentences: [ ... ] } -> { vectors: number[][] }
- * Retourne un score de similarité cosinus 0..100 entre userText et expectedAnswer.
+ * Retourne un entier 0..100 (cosinus * 100), ou null si EMB_BASE_URL non configuré.
+ * @param {string} a - texte élève
+ * @param {string} b - réponse attendue
  */
-export async function semanticSimilarity(userText, expectedAnswer) {
-  if (!expectedAnswer || !userText) return 0;
-  const EMB_URL = process.env.EMB_BASE_URL; // ex: http://emb:8000
-  if (!EMB_URL) return 0; // neutre si non configuré
+export async function semanticSimilarity100(a, b) {
+  const base = (process.env.EMB_BASE_URL || "").trim();
+  if (!base || !a || !b) return null;
 
-  const { data } = await axios.post(`${EMB_URL}/embed`, { sentences: [userText, expectedAnswer] }, { timeout: 8000 });
-  const [u, e] = data.vectors || [];
-  if (!u || !e) return 0;
-
-  // cosinus
-  const dot = u.reduce((s, x, i) => s + x * e[i], 0);
-  const nu = Math.sqrt(u.reduce((s, x) => s + x * x, 0));
-  const ne = Math.sqrt(e.reduce((s, x) => s + x * x, 0));
-  const cos = nu && ne ? dot / (nu * ne) : 0;
-  return Math.round(Math.max(0, Math.min(1, cos)) * 100);
+  try {
+    const url = `${base.replace(/\/+$/,"")}/similarity`;
+    const { data } = await axios.post(
+      url,
+      { a, b },
+      { headers: { "Content-Type": "application/json" }, timeout: 10000 }
+    );
+    // data.similarity est ~ [0..1] ; on renvoie 0..100 arrondi
+    const sim = Number(data?.similarity ?? 0);
+    if (!Number.isFinite(sim)) return null;
+    return Math.max(0, Math.min(100, Math.round(sim * 100)));
+  } catch (e) {
+    // Tolérant aux pannes : on loggue et on remonte null (le reste de l'analyse continue)
+    console.error("[semantic] error:", e?.message || e);
+    return null;
+  }
 }
