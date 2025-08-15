@@ -4,7 +4,7 @@
 // - Similarité (string-similarity)
 // - Heuristiques de structure (verbes & mots-clés)
 // - CORS whitelist, logging, rate limit, healthcheck
-
+import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
@@ -14,6 +14,10 @@ import { franc } from "franc-min";
 import { iso3ToIso2 } from "./utils/lang.js";
 import { checkWithLanguageTool } from "./services/languagetool.js";
 import { similarityScore, grammarSpellingScores, structureHeuristics } from "./scoring.js";
+import { evaluateAnswer } from "./evaluation.js";
+
+import rubricCfg from "./rubrics/cefr_rubric.json" assert { type: "json" };
+import { rubricAggregate } from "./rubricScoring.js";
 
 const app = express();
 
@@ -61,7 +65,7 @@ app.get("/health", (req, res) => {
 
 // ----- Route principale -----
 // POST /analyse-text
-// body: { text: string, expectedAnswer?: string, expectedLang?: string, keywords?: string[] }
+// body: { text: string, expectedAnswer?: string, expectedLang?: string, keywords?: string[], eval?: EvaluationConfig }
 app.post("/analyse-text", async (req, res) => {
   try {
     const { text, expectedAnswer = "", expectedLang = "", keywords = [] } = req.body || {};
@@ -70,7 +74,7 @@ app.post("/analyse-text", async (req, res) => {
     }
 
     // 1) Détection langue
-    const detectedIso3 = franc(text, { minLength: 10 }); // évite les faux positifs sur textes trop courts
+    const detectedIso3 = franc(text, { minLength: 10 }); // évite faux positifs sur textes trop courts
     const lang = iso3ToIso2(detectedIso3);
 
     // 2) LanguageTool (public ou self-host)
@@ -88,7 +92,7 @@ app.post("/analyse-text", async (req, res) => {
     // 4) Heuristiques de structure
     const struct = structureHeuristics(text, keywords, expectedLang || lang);
 
-    // 5) Scores grammaire/orthographe
+    // 5) Scores grammaire/orthographe (V1 linéaire)
     const { grammarScore, spellingScore, grammarErr, spellingErr } = grammarSpellingScores(ltData.matches);
 
     // 6) Issues formatées
@@ -110,13 +114,32 @@ app.post("/analyse-text", async (req, res) => {
       });
     }
 
-    // 8) Réponse
+    // 8) Évaluation de contenu (optionnelle) si le client fournit "eval"
+    const evalCfg = req.body?.eval || null;
+    let contentEval = { contentScore: 0, isCorrect: false, reasons: [] };
+    if (evalCfg) {
+      contentEval = evaluateAnswer(text, evalCfg, expectedLang || lang);
+    }
+
+    // 9) Barème CECRL (facultatif). Si pas d’EMB_BASE_URL, content=0 mais le reste (org/lexis/grammar/mechanics) fonctionne.
+    const rubric = rubricCfg.writing_default;
+    const rubricScore = await rubricAggregate({
+      text,
+      lang: expectedLang || lang,
+      ltMatches: ltData.matches || [],
+      expectedAnswer,
+      rubric
+    });
+
+    // 10) Réponse
     res.json({
       lang,
       grammarScore,
       spellingScore,
       similarityScore: similarity,
       issues,
+      content: contentEval,     // évaluation configurable par question
+      rubric: rubricScore,      // agrégat type correction humaine CECRL
       details: {
         grammarErrors: grammarErr,
         spellingErrors: spellingErr,

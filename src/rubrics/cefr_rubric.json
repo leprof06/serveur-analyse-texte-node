@@ -1,0 +1,14 @@
+{
+  "writing_default": {
+    "weights": {
+      "content": 35,      
+      "organization": 15, 
+      "lexis": 20,         
+      "grammar": 20,       
+      "mechanics": 10      
+    },
+    "thresholds": {
+      "pass": 60, "good": 75, "excellent": 90
+    }
+  }
+}
