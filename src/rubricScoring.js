@@ -1,18 +1,22 @@
-import { grammarSpellingScores } from "./scoring.js";             // LT → grammar/mechanics basiques
+import { grammarSpellingScores } from "./scoring.js";
 import { organizationMetrics } from "./organization.js";
 import { lexisMetrics } from "./lexis.js";
-import { semanticSimilarity } from "./semantic.js";                // optionnel
+import { semanticSimilarity100 } from "./semantic.js"; // <-- corrige l'import
 
-// agrège selon le barème
+// Agrège selon le barème CECRL-like
 export async function rubricAggregate({ text, lang, ltMatches, expectedAnswer, rubric }) {
   const w = rubric.weights;
 
-  // 1) grammar/mechanics -> depuis LT
+  // 1) grammar/mechanics (depuis LT)
   const { grammarScore, spellingScore } = grammarSpellingScores(ltMatches);
 
-  // 2) content -> sémantique (ou retomber sur similarité string si pas d’EMB)
-  const sem = await semanticSimilarity(text, expectedAnswer); // 0..100 (si pas d’EMB=0)
-  const contentScore = expectedAnswer ? (sem || 0) : 0;
+  // 2) content -> sémantique (0..100). Si EMB indispo => null => 0.
+  let sem = 0;
+  if (expectedAnswer) {
+    const s = await semanticSimilarity100(text, expectedAnswer);
+    sem = Number.isFinite(s) ? s : 0; // s ∈ [0..100] ou null
+  }
+  const contentScore = expectedAnswer ? sem : 0;
 
   // 3) organization
   const org = organizationMetrics(text, lang);
@@ -22,26 +26,23 @@ export async function rubricAggregate({ text, lang, ltMatches, expectedAnswer, r
   const lex = lexisMetrics(text, lang);
   const lexisScore = lex.lexisScore;
 
-  // 5) mechanics = orthographe & ponctuation. Ici on recycle spellingScore.
-  const mechanicsScore = spellingScore;
-
-  // PONDÉRATION
-  const final =
+  // Agrégation pondérée
+  const overall =
       (contentScore     * (w.content/100)) +
       (organizationScore* (w.organization/100)) +
       (lexisScore       * (w.lexis/100)) +
       (grammarScore     * (w.grammar/100)) +
-      (mechanicsScore   * (w.mechanics/100));
+      (spellingScore    * (w.mechanics/100));
 
   return {
-    overall: Math.round(final),
+    overall: Math.round(overall),
     breakdown: {
       content: Math.round(contentScore),
       organization: Math.round(organizationScore),
       lexis: Math.round(lexisScore),
       grammar: Math.round(grammarScore),
-      mechanics: Math.round(mechanicsScore)
+      mechanics: Math.round(spellingScore)
     },
-    details: { semantic: sem, organization: org, lexis: lex }
+    details: { semantic: contentScore, organization: org, lexis: lex }
   };
 }
